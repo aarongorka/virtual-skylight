@@ -32,14 +32,14 @@ def get_cropped_image(cache=False, debug=False):
     
     image_file = io.BytesIO(content)
     imread = skimage.io.imread(image_file)
-    print('shape: {}'.format(imread.shape))
+    logging.debug('shape: {}'.format(imread.shape))
     if debug:
         skimage.io.imshow(imread)
         skimage.io.show()
     height = imread.shape[0]
     width = imread.shape[1]
     second_crop = imread[0:int(height/3), 0:width]
-    print('2nd shape: {}'.format(second_crop.shape))
+    logging.debug('2nd shape: {}'.format(second_crop.shape))
     if debug:
         skimage.io.imshow(second_crop)
         skimage.io.show()
@@ -66,7 +66,7 @@ def get_dominant_colour(image, debug=False):
     """magic from https://stackoverflow.com/a/43111221/2640621"""
 
     average = [int(x) for x in image.mean(axis=0).mean(axis=0)]
-    print(f'average: {average}')
+    logging.debug(f'average: {average}')
     pixels = np.float32(image.reshape(-1, 3))
     
     n_colors = 5
@@ -77,7 +77,7 @@ def get_dominant_colour(image, debug=False):
     _, counts = np.unique(labels, return_counts=True)
     dominant = [int(x) for x in palette[np.argmax(counts)]]
     
-    print('red: {red} green: {green} blue: {blue}'.format(red=dominant[0], green=dominant[1], blue=dominant[2]))
+    logging.info('rgb: {red} {green} {blue}'.format(red=dominant[0], green=dominant[1], blue=dominant[2]))
     return dominant
 
 
@@ -101,7 +101,7 @@ def rgb_to_hsv(r, g, b):
     else:
         s = (df/mx)*100
     v = mx*100
-    return h, s, v
+    return int(h), int(s), int(v)
 
 
 def chunk_image_by_bulb(image):
@@ -120,16 +120,17 @@ def set_all_bulbs_to_sky(debug, cache):
     better_image = enhance_image(image, debug=debug)
     rgb = get_dominant_colour(better_image, debug=debug)
     h, s, v = rgb_to_hsv(*rgb)
-    print(f'hsv: {h} {s} {v}')
+    logging.info(f'hsv: {h} {s} {v}')
     bulbs = yeelight.discover_bulbs()  # TODO: set the colour of each bulb individually from a chunk of the image
     for bulb in bulbs:
-        print(bulb['ip'])
+        logging.info('Updating {}...'.format(bulb['ip']))
         if v == 0:
             this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
             this_bulb.turn_off()
         else:
             this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
             this_bulb.set_hsv(h, s, v, duration=int(15000))
+    logging.info('Done.')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,6 @@
+Click==7.0
+numpy==1.16.3
+opencv-python==4.1.0.25
+requests==2.21.0
+scikit-image==0.15.0
+yeelight==0.5.0

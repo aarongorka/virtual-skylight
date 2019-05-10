@@ -121,7 +121,7 @@ def set_all_bulbs_to_sky(debug, cache):
     rgb = get_dominant_colour(better_image, debug=debug)
     h, s, v = rgb_to_hsv(*rgb)
     print(f'hsv: {h} {s} {v}')
-    bulbs = yeelight.discover_bulbs()  # TODO: set the colour of eac bulb individuall from a chunk of the image
+    bulbs = yeelight.discover_bulbs()  # TODO: set the colour of each bulb individually from a chunk of the image
     for bulb in bulbs:
         print(bulb['ip'])
         if v == 0:

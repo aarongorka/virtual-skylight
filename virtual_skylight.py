@@ -10,6 +10,10 @@ import logging
 import pickle as pickle
 import click
 from pathlib import Path
+import backoff
+from fabulous import image as fab_image
+from fabulous import text
+import imageio
 
 logging.basicConfig(level=logging.INFO)
 
@@ -18,6 +22,8 @@ def save_object(obj, filename):
         pickle.dump(obj, output, pickle.HIGHEST_PROTOCOL)
 
 
+exceptions = (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, requests.exceptions.Timeout)
+@backoff.on_exception(backoff.expo, exceptions)
 def get_cropped_image(cache=False, debug=False):
     if cache and Path('content.pkl').is_file():
         logging.debug('Using cache...')
@@ -25,6 +31,7 @@ def get_cropped_image(cache=False, debug=False):
     else:
         logging.debug('Not using cache...')
         r = requests.get('https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637', headers={"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"})
+        r.raise_for_status()
         content = r.content
         if cache:
             logging.debug('Saving cache...')
@@ -32,6 +39,8 @@ def get_cropped_image(cache=False, debug=False):
     
     image_file = io.BytesIO(content)
     imread = skimage.io.imread(image_file)
+    logging.info('Displaying original image:')
+    print_scimage(imread)
     logging.debug('shape: {}'.format(imread.shape))
     if debug:
         skimage.io.imshow(imread)
@@ -40,12 +49,20 @@ def get_cropped_image(cache=False, debug=False):
     width = imread.shape[1]
     second_crop = imread[0:int(height/3), 0:width]
     logging.debug('2nd shape: {}'.format(second_crop.shape))
+    logging.info('Displaying cropped image:')
+    print_scimage(second_crop)
     if debug:
         skimage.io.imshow(second_crop)
         skimage.io.show()
     
     image = second_crop
     return image
+
+
+def print_scimage(image):
+    image_file = io.BytesIO()
+    imageio.imwrite(image_file, image, format='png')
+    print(fab_image.Image(image_file))
 
 
 def enhance_image(image, debug=False):
@@ -55,10 +72,12 @@ def enhance_image(image, debug=False):
     Reference: https://scikit-image.org/docs/dev/user_guide/transforming_image_data.html
     """
 
-    better_contrast = exposure.rescale_intensity(image, in_range=(30, 200))
+    better_contrast = exposure.rescale_intensity(image, in_range=(30, 140))
     if debug:
         skimage.io.imshow(better_contrast)
         skimage.io.show()
+    logging.info('Displaying enhanced image:')
+    print_scimage(better_contrast)
     return better_contrast
 
 
@@ -104,25 +123,35 @@ def rgb_to_hsv(r, g, b):
     return int(h), int(s), int(v)
 
 
-def chunk_image_by_bulb(image):
-    bulbs = range(1, 7)
-    len(bulbs)
+def get_hsv_by_bulb(image, bulbs):
+    number_of_chunks = len(bulbs)
+    height = image.shape[0]
+    width = image.shape[1]
+    chunk_height = height / number_of_chunks
+    for i, bulb in enumerate(bulbs):
+        chunk_begin = int(chunk_height * i)
+        chunk_end = int(chunk_begin + chunk_height)
+        image_chunk = image[chunk_begin:chunk_end, 0:width]  # simple horizontal slices for now
+        logging.info(f'Displaying chunk {i}:')
+        print_scimage(image_chunk)
+        chunk_dominant = get_dominant_colour(image_chunk)
+        h, s, v = rgb_to_hsv(*chunk_dominant)
+        yield h, s, v, bulb
 
 
 @click.command()
 @click.option('--debug', is_flag=True)
 @click.option('--cache/--no-cache')
 def set_all_bulbs_to_sky(debug, cache):
+    print(text.Text("Virtual Skylight", shadow=True, skew=5))
     bulbs = []
     if debug:
         logging.basicConfig(level=logging.DEBUG)
     image = get_cropped_image(cache=cache, debug=debug)
     better_image = enhance_image(image, debug=debug)
-    rgb = get_dominant_colour(better_image, debug=debug)
-    h, s, v = rgb_to_hsv(*rgb)
-    logging.info(f'hsv: {h} {s} {v}')
-    bulbs = yeelight.discover_bulbs()  # TODO: set the colour of each bulb individually from a chunk of the image
-    for bulb in bulbs:
+    bulbs = yeelight.discover_bulbs()  # TODO: provide order to bulbs through options
+    bulbs_and_hsvs = get_hsv_by_bulb(better_image, bulbs)
+    for h, s, v, bulb in bulbs_and_hsvs:
         logging.info('Updating {}...'.format(bulb['ip']))
         if v == 0:
             this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)

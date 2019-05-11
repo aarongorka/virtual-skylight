@@ -1,2 +1,2 @@
 loop:
-	watch -n 300 ./virtual_skylight.py | tee -a ./virtual_skylight.log
+	while ./virtual_skylight.py | tee -a virtual_skylight.log; do sleep 300s; done

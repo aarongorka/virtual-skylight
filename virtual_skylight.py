@@ -72,7 +72,7 @@ def enhance_image(image, debug=False):
     Reference: https://scikit-image.org/docs/dev/user_guide/transforming_image_data.html
     """
 
-    better_contrast = exposure.rescale_intensity(image, in_range=(30, 140))
+    better_contrast = exposure.rescale_intensity(image, in_range=(30, 120))
     if debug:
         skimage.io.imshow(better_contrast)
         skimage.io.show()

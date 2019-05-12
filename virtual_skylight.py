@@ -24,7 +24,7 @@ def save_object(obj, filename):
 
 exceptions = (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, requests.exceptions.Timeout)
 @backoff.on_exception(backoff.expo, exceptions)
-def get_cropped_image(cache=False, debug=False):
+def get_image(cache=False, debug=False):
     if cache and Path('content.pkl').is_file():
         logging.debug('Using cache...')
         content = pickle.load(open('content.pkl', 'rb'))
@@ -45,18 +45,33 @@ def get_cropped_image(cache=False, debug=False):
     if debug:
         skimage.io.imshow(imread)
         skimage.io.show()
-    height = imread.shape[0]
-    width = imread.shape[1]
-    second_crop = imread[0:int(height/3), 0:width]
-    logging.debug('2nd shape: {}'.format(second_crop.shape))
+    image = imread
+    return image
+
+def crop_image(image, debug=False):
+    height = image.shape[0]
+    width = image.shape[1]
+    first_crop = image[0:int(height/2.29), 0:width]
+    logging.debug('2nd shape: {}'.format(first_crop.shape))
     logging.info('Displaying cropped image:')
+    print_scimage(first_crop)
+    if debug:
+        skimage.io.imshow(first_crop)
+        skimage.io.show()
+    
+    image = first_crop
+    return image
+
+def crop_image_more(cropped_image, debug=False):
+    height = cropped_image.shape[0]
+    width = cropped_image.shape[1]
+    second_crop = cropped_image[0:height, int(width * 0.925):int(width * 0.95)]
+    logging.info('Displaying more cropped image:')
     print_scimage(second_crop)
     if debug:
         skimage.io.imshow(second_crop)
         skimage.io.show()
-    
-    image = second_crop
-    return image
+    return second_crop
 
 
 def print_scimage(image):
@@ -72,12 +87,15 @@ def enhance_image(image, debug=False):
     Reference: https://scikit-image.org/docs/dev/user_guide/transforming_image_data.html
     """
 
-    better_contrast = exposure.rescale_intensity(image, in_range=(30, 120))
+    better_contrast = exposure.rescale_intensity(image, in_range=(30, 170))
     if debug:
         skimage.io.imshow(better_contrast)
         skimage.io.show()
     logging.info('Displaying enhanced image:')
     print_scimage(better_contrast)
+    if debug:
+        skimage.io.imshow(better_contrast)
+        skimage.io.show()
     return better_contrast
 
 
@@ -147,18 +165,21 @@ def set_all_bulbs_to_sky(debug, cache):
     bulbs = []
     if debug:
         logging.basicConfig(level=logging.DEBUG)
-    image = get_cropped_image(cache=cache, debug=debug)
+
+    image = get_image(cache=cache, debug=debug)
     better_image = enhance_image(image, debug=debug)
-    bulbs = yeelight.discover_bulbs()  # TODO: provide order to bulbs through options
-    bulbs_and_hsvs = get_hsv_by_bulb(better_image, bulbs)
+    cropped_image = crop_image(better_image, debug=debug)
+    more_cropped_image = crop_image_more(cropped_image, debug=debug)
+    bulbs = yeelight.discover_bulbs().sort(key=lambda x: x['capabilities']['id'])  # TODO: provide order to bulbs through options
+    bulbs_and_hsvs = get_hsv_by_bulb(more_cropped_image, bulbs)
     for h, s, v, bulb in bulbs_and_hsvs:
         logging.info('Updating {}...'.format(bulb['ip']))
-        if v == 0:
+        if v < 15:
             this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
             this_bulb.turn_off()
         else:
             this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
-            this_bulb.set_hsv(h, s, v, duration=int(15000))
+            this_bulb.set_hsv(h, s * 2, v, duration=int(15000))
     logging.info('Done.')
 
 

@@ -1,0 +1,10 @@
+version: '3.7'
+services:
+  virtual-skylight:
+    image: aarongorka/virtual-skylight
+    build: .
+    network_mode: host  # broadcast scans
+    volumes:
+      - .:/work:Z
+    working_dir: /work
+

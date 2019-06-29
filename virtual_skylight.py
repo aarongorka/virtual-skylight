@@ -25,7 +25,7 @@ def save_object(obj, filename):
 
 exceptions = (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, requests.exceptions.Timeout)
 @backoff.on_exception(backoff.expo, exceptions)
-def get_image(cache=False, debug=False):
+def get_image(cache=False, debug=False, quiet=False):
     if cache and Path('content.pkl').is_file():
         logging.debug('Using cache...')
         content = pickle.load(open('content.pkl', 'rb'))
@@ -41,7 +41,8 @@ def get_image(cache=False, debug=False):
     image_file = io.BytesIO(content)
     imread = skimage.io.imread(image_file)
     logging.info('Displaying original image:')
-    print_scimage(imread)
+    if not quiet:
+        print_scimage(imread)
     logging.debug('shape: {}'.format(imread.shape))
     if debug:
         skimage.io.imshow(imread)
@@ -49,13 +50,14 @@ def get_image(cache=False, debug=False):
     image = imread
     return image
 
-def crop_image(image, debug=False):
+def crop_image(image, debug=False, quiet=False):
     height = image.shape[0]
     width = image.shape[1]
     first_crop = image[0:int(height/2.29), 0:width]
     logging.debug('2nd shape: {}'.format(first_crop.shape))
     logging.info('Displaying cropped image:')
-    print_scimage(first_crop)
+    if not quiet:
+        print_scimage(first_crop)
     if debug:
         skimage.io.imshow(first_crop)
         skimage.io.show()
@@ -63,24 +65,26 @@ def crop_image(image, debug=False):
     image = first_crop
     return image
 
-def crop_image_more(cropped_image, debug=False):
+def crop_image_more(cropped_image, debug=False, quiet=False):
     height = cropped_image.shape[0]
     width = cropped_image.shape[1]
     second_crop = cropped_image[0:height, int(width * 0.925):int(width * 0.95)]
     logging.info('Displaying more cropped image:')
-    print_scimage(second_crop)
+    if not quiet:
+        print_scimage(second_crop)
     if debug:
         skimage.io.imshow(second_crop)
         skimage.io.show()
     return second_crop
 
 
-def alt_crop_image_more(cropped_image, debug=False):
+def alt_crop_image_more(cropped_image, debug=False, quiet=False):
     height = cropped_image.shape[0]
     width = cropped_image.shape[1]
     second_crop = cropped_image[0:height, int(width * 0.5):width]
     logging.info('Displaying more cropped image:')
-    print_scimage(second_crop)
+    if not quiet:
+        print_scimage(second_crop)
     if debug:
         skimage.io.imshow(second_crop)
         skimage.io.show()
@@ -93,7 +97,7 @@ def print_scimage(image):
     print(fab_image.Image(image_file))
 
 
-def enhance_image(image, debug=False):
+def enhance_image(image, debug=False, quiet=False):
     """
     Improves the range of the image more closely align night with black and daylight with white.
 
@@ -108,14 +112,15 @@ def enhance_image(image, debug=False):
         skimage.io.imshow(final_adjustment)
         skimage.io.show()
     logging.info('Displaying enhanced image:')
-    print_scimage(final_adjustment)
+    if not quiet:
+        print_scimage(final_adjustment)
     if debug:
         skimage.io.imshow(final_adjustment)
         skimage.io.show()
     return final_adjustment
 
 
-def get_dominant_colour(image, debug=False):
+def get_dominant_colour(image, debug=False, quiet=False):
     """magic from https://stackoverflow.com/a/43111221/2640621"""
 
     average = [int(x) for x in image.mean(axis=0).mean(axis=0)][:3]
@@ -171,7 +176,7 @@ def rgb_to_hsv(r, g, b):
     return int(h), int(s), int(v)
 
 
-def get_hsv_by_bulb(image, bulbs, debug=False):
+def get_hsv_by_bulb(image, bulbs, debug=False, quiet=False):
     number_of_chunks = len(bulbs)
     height = image.shape[0]
     width = image.shape[1]
@@ -181,7 +186,8 @@ def get_hsv_by_bulb(image, bulbs, debug=False):
         chunk_end = int(chunk_begin + chunk_height)
         image_chunk = image[chunk_begin:chunk_end, 0:width]  # simple horizontal slices for now
         logging.info(f'Displaying chunk {i}:')
-        print_scimage(image_chunk)
+        if not quiet:
+            print_scimage(image_chunk)
         if debug:
             skimage.io.imshow(image_chunk)
             skimage.io.show()
@@ -192,11 +198,13 @@ def get_hsv_by_bulb(image, bulbs, debug=False):
 
 @click.command()
 @click.option('--debug', is_flag=True)
+@click.option('--quiet', is_flag=True)
 @click.option('--cache/--no-cache')
 @click.option('--off', is_flag=True)
 @click.option('--dry-run', is_flag=True)
-def set_all_bulbs_to_sky(debug, cache, off, dry_run):
-    print(text.Text("Virtual Skylight", shadow=True, skew=5))
+def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
+    if not quiet:
+        print(text.Text("Virtual Skylight", shadow=True, skew=5))
     bulbs = []
     if debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -209,17 +217,20 @@ def set_all_bulbs_to_sky(debug, cache, off, dry_run):
             logging.info('Goodbye!')
         return
 
-    image = get_image(cache=cache, debug=debug)
-    masked_image = apply_mask(image, debug=debug)
-    cropped_image = crop_image(masked_image, debug=debug)
-    alt_cropped_image = alt_crop_image_more(cropped_image, debug=debug)
-    better_image = enhance_image(alt_cropped_image, debug=debug)
-#    more_cropped_image = crop_image_more(cropped_image, debug=debug)
+    kwargs = {"debug": debug, "quiet": quiet}
+
+    image = get_image(cache=cache, **kwargs)
+    masked_image = apply_mask(image, **kwargs)
+    cropped_image = crop_image(masked_image, **kwargs)
+    alt_cropped_image = alt_crop_image_more(cropped_image, **kwargs)
+    better_image = enhance_image(alt_cropped_image, **kwargs)
+#    more_cropped_image = crop_image_more(cropped_image, **kwargs)
     final_image = better_image
 
     bulbs = yeelight.discover_bulbs()  # TODO: provide order to bulbs through options
+    assert len(bulbs) > 0
     bulbs.sort(key=lambda x: x['capabilities']['id'])
-    bulbs_and_hsvs = get_hsv_by_bulb(final_image, bulbs, debug=debug)
+    bulbs_and_hsvs = get_hsv_by_bulb(final_image, bulbs, **kwargs)
     for h, s, v, bulb in bulbs_and_hsvs:
         logging.info('Updating {}...'.format(bulb['ip']))
         if not dry_run:
@@ -232,12 +243,14 @@ def set_all_bulbs_to_sky(debug, cache, off, dry_run):
     logging.info('Done.')
 
 
-def apply_mask(image, debug=False):
+def apply_mask(image, debug=False, quiet=False):
     mask = skimage.io.imread("mask.png")
-    print_scimage(mask)
+    if not quiet:
+        print_scimage(mask)
     rgba = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)
     result = cv2.subtract(rgba, mask)
-    print_scimage(result)
+    if not quiet:
+        print_scimage(result)
     if debug:
         skimage.io.imshow(result)
         skimage.io.show()

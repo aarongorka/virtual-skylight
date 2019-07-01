@@ -240,10 +240,16 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
         if not dry_run:
             if v < 15:
                 this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
-                this_bulb.turn_off()
+                try:
+                    this_bulb.turn_off()
+                except yeelight.main.BulbException:
+                    logging.warning("Failed to turn off {}...".format(bulb['ip']))
             else:
                 this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
-                this_bulb.set_hsv(h, s * 2, v, duration=int(15000))  # double saturation
+                try:
+                    this_bulb.set_hsv(h, s * 2, v, duration=int(15000))  # double saturation
+                except yeelight.main.BulbException:
+                    logging.critical("Failed to update {}...".format(bulb['ip']))
     logging.info('Done.')
 
 

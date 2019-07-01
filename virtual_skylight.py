@@ -51,6 +51,7 @@ def get_image(cache=False, debug=False, quiet=False):
     image = imread
     return image
 
+
 def crop_image(image, debug=False, quiet=False):
     height = image.shape[0]
     width = image.shape[1]
@@ -65,6 +66,7 @@ def crop_image(image, debug=False, quiet=False):
     
     image = first_crop
     return image
+
 
 def crop_image_more(cropped_image, debug=False, quiet=False):
     height = cropped_image.shape[0]

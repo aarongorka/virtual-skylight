@@ -15,6 +15,7 @@ from fabulous import image as fab_image
 from fabulous import text
 from fabulous.color import fg256
 import imageio
+import yaml
 
 logging.basicConfig(level=logging.INFO)
 
@@ -209,8 +210,14 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
     if debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    if off:
+    try:
+        bulbs = load_config()['bulbs']
+    except FileNotFoundError:
         bulbs = yeelight.discover_bulbs()
+        bulbs.sort(key=lambda x: x['capabilities']['id'])
+    assert len(bulbs) > 0
+
+    if off:
         for bulb in bulbs:
             this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
             this_bulb.turn_off()
@@ -227,9 +234,6 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
 #    more_cropped_image = crop_image_more(cropped_image, **kwargs)
     final_image = better_image
 
-    bulbs = yeelight.discover_bulbs()  # TODO: provide order to bulbs through options
-    assert len(bulbs) > 0
-    bulbs.sort(key=lambda x: x['capabilities']['id'])
     bulbs_and_hsvs = get_hsv_by_bulb(final_image, bulbs, **kwargs)
     for h, s, v, bulb in bulbs_and_hsvs:
         logging.info('Updating {}...'.format(bulb['ip']))
@@ -255,6 +259,13 @@ def apply_mask(image, debug=False, quiet=False):
         skimage.io.imshow(result)
         skimage.io.show()
     return result
+
+
+def load_config():
+    with open('./config.yml') as handle:
+        content = handle.read()
+    config = yaml.safe_load(content)
+    return config
 
 
 if __name__ == '__main__':

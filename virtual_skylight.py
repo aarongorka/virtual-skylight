@@ -214,6 +214,7 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
 
     try:
         bulbs = load_config()['bulbs']
+        bulbs.sort(key=lambda x: x['position'])
     except FileNotFoundError:
         bulbs = yeelight.discover_bulbs()
         bulbs.sort(key=lambda x: x['capabilities']['id'])

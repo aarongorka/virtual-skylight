@@ -16,6 +16,7 @@ from fabulous import text
 from fabulous.color import fg256
 import imageio
 import yaml
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -221,6 +222,8 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
         bulbs.sort(key=lambda x: x['capabilities']['id'])
     assert len(bulbs) > 0
 
+    sleep_time = 50.0 / len(bulbs)  # small buffer between 1 minute invocations
+
     if off:
         for bulb in bulbs:
             this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
@@ -254,6 +257,8 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
                     this_bulb.set_hsv(h, s * 2, v, duration=int(15000))  # double saturation
                 except yeelight.main.BulbException:
                     logging.critical("Failed to update {}...".format(bulb['ip']))
+        logging.info('Updated {}.'.format(bulb['ip']))
+        time.sleep(sleep_time)
     logging.info('Done.')
 
 

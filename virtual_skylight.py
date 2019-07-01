@@ -32,7 +32,8 @@ def get_image(cache=False, debug=False, quiet=False):
         content = pickle.load(open('content.pkl', 'rb'))
     else:
         logging.debug('Not using cache...')
-        r = requests.get('https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637', headers={"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"})
+        headers = {"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"}
+        r = requests.get('https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637', headers=headers)
         r.raise_for_status()
         content = r.content
         if cache:

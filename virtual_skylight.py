@@ -17,6 +17,7 @@ from fabulous.color import fg256
 import imageio
 import yaml
 import time
+import PIL
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,24 +28,33 @@ def save_object(obj, filename):
 
 exceptions = (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, requests.exceptions.Timeout)
 @backoff.on_exception(backoff.expo, exceptions)
-def get_image(cache=False, debug=False, quiet=False):
-    if cache and Path('content.pkl').is_file():
+def get_image(webcam="afternoon", cache=False, debug=False, quiet=False):
+    webcams = {
+        "morning": {
+            "url": "http://weather.trevandsteve.com/snapshot1.jpg?x={time}".format(time=int(time.time())),
+            "headers": {}
+        },
+        "afternoon": {
+            "url": "https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637",
+            "headers": {"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"}
+        }
+    }
+    if cache and Path(f'{webcam}_content.pkl').is_file():
         logging.debug('Using cache...')
-        content = pickle.load(open('content.pkl', 'rb'))
+        content = pickle.load(open(f'{webcam}_content.pkl', 'rb'))
     else:
         logging.debug('Not using cache...')
-        headers = {"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"}
-        r = requests.get('https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637', headers=headers)
+        r = requests.get(webcams[webcam]['url'], headers=webcams[webcam]['headers'])
         r.raise_for_status()
         content = r.content
         if cache:
             logging.debug('Saving cache...')
-            save_object(content, 'content.pkl')
-    
+            save_object(content, f'{webcam}_content.pkl')
+
     image_file = io.BytesIO(content)
     imread = skimage.io.imread(image_file)
-    logging.info('Displaying original image:')
     if not quiet:
+        logging.info('Displaying original image:')
         print_scimage(imread)
     logging.debug('shape: {}'.format(imread.shape))
     if debug:
@@ -54,46 +64,18 @@ def get_image(cache=False, debug=False, quiet=False):
     return image
 
 
-def crop_image(image, debug=False, quiet=False):
-    height = image.shape[0]
-    width = image.shape[1]
-    first_crop = image[0:int(height/2.29), 0:width]
+def crop_image(image, dimensions, debug=False, quiet=False):
+    first_crop = image[dimensions]
     logging.debug('2nd shape: {}'.format(first_crop.shape))
-    logging.info('Displaying cropped image:')
     if not quiet:
+        logging.info('Displaying cropped image:')
         print_scimage(first_crop)
     if debug:
         skimage.io.imshow(first_crop)
         skimage.io.show()
-    
+
     image = first_crop
     return image
-
-
-def crop_image_more(cropped_image, debug=False, quiet=False):
-    height = cropped_image.shape[0]
-    width = cropped_image.shape[1]
-    second_crop = cropped_image[0:height, int(width * 0.925):int(width * 0.95)]
-    logging.info('Displaying more cropped image:')
-    if not quiet:
-        print_scimage(second_crop)
-    if debug:
-        skimage.io.imshow(second_crop)
-        skimage.io.show()
-    return second_crop
-
-
-def alt_crop_image_more(cropped_image, debug=False, quiet=False):
-    height = cropped_image.shape[0]
-    width = cropped_image.shape[1]
-    second_crop = cropped_image[0:height, int(width * 0.5):width]
-    logging.info('Displaying more cropped image:')
-    if not quiet:
-        print_scimage(second_crop)
-    if debug:
-        skimage.io.imshow(second_crop)
-        skimage.io.show()
-    return second_crop
 
 
 def print_scimage(image):
@@ -116,8 +98,8 @@ def enhance_image(image, debug=False, quiet=False):
     if debug:
         skimage.io.imshow(final_adjustment)
         skimage.io.show()
-    logging.info('Displaying enhanced image:')
     if not quiet:
+        logging.info('Displaying enhanced image:')
         print_scimage(final_adjustment)
     if debug:
         skimage.io.imshow(final_adjustment)
@@ -133,20 +115,21 @@ def get_dominant_colour(image, debug=False, quiet=False):
     logging.info(fg256(html, f'average: {average}'))
 
     pixels = np.float32(image.reshape(-1, 4))
-    
+
     n_colors = 5
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, .1)
     flags = cv2.KMEANS_RANDOM_CENTERS
-    
+
     _, labels, palette = cv2.kmeans(pixels, n_colors, None, criteria, 10, flags)
     _, counts = np.unique(labels, return_counts=True)
-#    logging.info(f'palette: {palette}')
+    logging.debug(f'palette: {palette}')
 
     filtered_palette = [x for x in palette if x[3] > 200]
+    logging.debug(f'filtered_palette: {filtered_palette}')
     sorted_palette_dominant = np.sort([int(x) for x in filtered_palette[0]])
 
     dominant = [int(x) for x in palette[np.argmax(counts)]]
-    
+
     html = "#{0:02x}{1:02x}{2:02x}".format(dominant[0], dominant[1], dominant[2])
     logging.info(fg256(html, f'dominant: {dominant}'))
 
@@ -183,15 +166,18 @@ def rgb_to_hsv(r, g, b):
 
 def get_hsv_by_bulb(image, bulbs, debug=False, quiet=False):
     number_of_chunks = len(bulbs)
+#    import pdb; pdb.set_trace()
     height = image.shape[0]
     width = image.shape[1]
+    #height = image.size[1]
+    #width = image.size[0]
     chunk_height = height / number_of_chunks
     for i, bulb in enumerate(bulbs):
         chunk_begin = int(chunk_height * i)
         chunk_end = int(chunk_begin + chunk_height)
         image_chunk = image[chunk_begin:chunk_end, 0:width]  # simple horizontal slices for now
-        logging.info(f'Displaying chunk {i}:')
         if not quiet:
+            logging.info(f'Displaying chunk {i}:')
             print_scimage(image_chunk)
         if debug:
             skimage.io.imshow(image_chunk)
@@ -199,6 +185,55 @@ def get_hsv_by_bulb(image, bulbs, debug=False, quiet=False):
         r, g, b = get_dominant_colour(image_chunk)
         h, s, v = rgb_to_hsv(r, g * 0.8, b)  # slightly decrease greenness
         yield h, s, v, bulb
+
+
+def apply_all_afternoon_image_modifications(image, debug=False, quiet=False):
+
+    kwargs = {"debug": debug, "quiet": quiet}
+    masked_image = apply_mask(image, 'afternoon_mask.png', **kwargs)
+    cropped_image = masked_image[0:489, 0:1920]
+    better_image = enhance_image(cropped_image, **kwargs)
+    final_image = better_image
+    return final_image
+
+
+def apply_all_morning_image_modifications(image, debug=False, quiet=False):
+
+    kwargs = {"debug": debug, "quiet": quiet}
+    masked_image = apply_mask(image, 'morning_mask.png', **kwargs)
+    cropped_image = masked_image[0:313, 0:639]
+    better_image = enhance_image(cropped_image, **kwargs)
+    final_image = better_image
+    return final_image
+
+
+def merge_images(morning, afternoon, debug=False, quiet=False):
+    """https://stackoverflow.com/a/30228308/2640621"""
+
+    morning_flipped = np.flipud(morning)  # https://stackoverflow.com/questions/9154120/how-can-i-flip-an-image-along-the-vertical-axis-with-python
+
+    if not quiet:
+        logging.info("Displaying flipped image:")
+        print_scimage(morning_flipped)
+    if debug:
+        skimage.io.imshow(morning_flipped)
+        skimage.io.show()
+
+    imgs = [PIL.Image.fromarray(x) for x in [morning_flipped, afternoon]]
+
+    min_shape = sorted([(np.sum(i.size), i.size) for i in imgs])[0][1]
+    logging.info(f'Min shape is {min_shape}')
+    
+    imgs_comb = np.vstack((np.asarray(i.resize(min_shape)) for i in imgs))
+#    imgs_comb = PIL.Image.fromarray(imgs_comb)
+
+    if not quiet:
+        logging.info('Displaying merged image:')
+        print_scimage(imgs_comb)
+    if debug:
+        skimage.io.imshow(imgs_comb)
+        skimage.io.show()
+    return imgs_comb
 
 
 @click.command()
@@ -210,9 +245,12 @@ def get_hsv_by_bulb(image, bulbs, debug=False, quiet=False):
 def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
     if not quiet:
         print(text.Text("Virtual Skylight", shadow=True, skew=5))
-    bulbs = []
     if debug:
         logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
+    bulbs = []
 
     try:
         bulbs = load_config()['bulbs']
@@ -233,13 +271,11 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
 
     kwargs = {"debug": debug, "quiet": quiet}
 
-    image = get_image(cache=cache, **kwargs)
-    masked_image = apply_mask(image, **kwargs)
-    cropped_image = crop_image(masked_image, **kwargs)
-    alt_cropped_image = alt_crop_image_more(cropped_image, **kwargs)
-    better_image = enhance_image(alt_cropped_image, **kwargs)
-#    more_cropped_image = crop_image_more(cropped_image, **kwargs)
-    final_image = better_image
+    afternoon_image = get_image(webcam='afternoon', cache=cache, **kwargs)
+    morning_image = get_image(webcam='morning', cache=cache, **kwargs)
+    modified_afternoon_image = apply_all_afternoon_image_modifications(afternoon_image, **kwargs)
+    modified_morning_image = apply_all_morning_image_modifications(morning_image, **kwargs)
+    final_image = merge_images(morning=modified_morning_image, afternoon=modified_afternoon_image, **kwargs)
 
     bulbs_and_hsvs = get_hsv_by_bulb(final_image, bulbs, **kwargs)
     for h, s, v, bulb in bulbs_and_hsvs:
@@ -262,13 +298,16 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
     logging.info('Done.')
 
 
-def apply_mask(image, debug=False, quiet=False):
-    mask = skimage.io.imread("mask.png")
+def apply_mask(image, mask_filename, debug=False, quiet=False):
+    mask = skimage.io.imread(mask_filename)
     if not quiet:
+        logging.info('Displaying mask:')
         print_scimage(mask)
-    rgba = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)
-    result = cv2.subtract(rgba, mask)
+    rgba_mask = cv2.cvtColor(mask, cv2.COLOR_RGB2RGBA)
+    rgba      = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)
+    result = cv2.subtract(rgba, rgba_mask)
     if not quiet:
+        logging.info('Displaying masked image:')
         print_scimage(result)
     if debug:
         skimage.io.imshow(result)

@@ -5,13 +5,13 @@ build:
 	docker-compose build virtual-skylight
 
 run:
-	docker-compose run --rm virtual-skylight ./virtual_skylight.py --quiet
+	docker-compose run --rm virtual-skylight ./virtual_skylight.py --quiet --alt-morning
 
 off:
 	docker-compose run --rm virtual-skylight ./virtual_skylight.py --quiet --off
 
 test:
-	docker-compose run --rm virtual-skylight ./virtual_skylight.py --dry-run
+	docker-compose run --rm virtual-skylight ./virtual_skylight.py --dry-run --alt-morning
 
 testTerm:
 	docker-compose run --rm virtual-skylight python3 -c 'from fabulous import utils; term = utils.TerminalInfo(); print(term.width); print(term.height)'

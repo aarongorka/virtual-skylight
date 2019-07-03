@@ -28,23 +28,14 @@ def save_object(obj, filename):
 
 exceptions = (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, requests.exceptions.Timeout)
 @backoff.on_exception(backoff.expo, exceptions)
-def get_image(webcam="afternoon", cache=False, debug=False, quiet=False):
-    webcams = {
-        "morning": {
-            "url": "http://weather.trevandsteve.com/snapshot1.jpg?x={time}".format(time=int(time.time())),
-            "headers": {}
-        },
-        "afternoon": {
-            "url": "https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637",
-            "headers": {"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"}
-        }
-    }
+def get_image(webcam, cache=False, debug=False, quiet=False):
+
     if cache and Path(f'{webcam}_content.pkl').is_file():
         logging.debug('Using cache...')
         content = pickle.load(open(f'{webcam}_content.pkl', 'rb'))
     else:
         logging.debug('Not using cache...')
-        r = requests.get(webcams[webcam]['url'], headers=webcams[webcam]['headers'])
+        r = requests.get(webcam['url'], headers=webcam['headers'])
         r.raise_for_status()
         content = r.content
         if cache:
@@ -187,11 +178,10 @@ def get_hsv_by_bulb(image, bulbs, debug=False, quiet=False):
         yield h, s, v, bulb
 
 
-def apply_all_afternoon_image_modifications(image, debug=False, quiet=False):
-
+def apply_all_image_modifications(image, settings, debug=False, quiet=False):
     kwargs = {"debug": debug, "quiet": quiet}
-    masked_image = apply_mask(image, 'afternoon_mask.png', **kwargs)
-    cropped_image = masked_image[0:489, 0:1920]
+    masked_image = apply_mask(image, settings['mask'], **kwargs)
+    cropped_image = masked_image[settings['dimensions'][0]:settings['dimensions'][1], settings['dimensions'][2]:settings['dimensions'][3]]
     better_image = enhance_image(cropped_image, **kwargs)
     final_image = better_image
     return final_image
@@ -201,7 +191,7 @@ def apply_all_morning_image_modifications(image, debug=False, quiet=False):
 
     kwargs = {"debug": debug, "quiet": quiet}
     masked_image = apply_mask(image, 'morning_mask.png', **kwargs)
-    cropped_image = masked_image[0:313, 0:639]
+    cropped_image = masked_image[0:56, 0:300]
     better_image = enhance_image(cropped_image, **kwargs)
     final_image = better_image
     return final_image
@@ -242,9 +232,11 @@ def merge_images(morning, afternoon, debug=False, quiet=False):
 @click.option('--cache/--no-cache')
 @click.option('--off', is_flag=True)
 @click.option('--dry-run', is_flag=True)
-def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
-    if not quiet:
-        print(text.Text("Virtual Skylight", shadow=True, skew=5))
+@click.option('--alt-morning', is_flag=True)
+def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
+#    if not quiet:
+#        print(text.Text("Virtual Skylight", shadow=True, skew=5))
+
     if debug:
         logging.basicConfig(level=logging.DEBUG)
     else:
@@ -268,12 +260,45 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
             logging.info('Goodbye!')
         return
 
+    unixtime = int(time.time())
+
+    webcams = {
+        "morning": {
+            "url": "http://weather.trevandsteve.com/snapshot1.jpg?x={unixtime}",
+            "headers": {"Referer": "http://weather.trevandsteve.com/"},
+            "mask": "morning_mask.png",
+            "dimensions": [0, 313, 0, 639]
+        },
+        "alt_morning": {
+            "url": "",
+            "headers": {},
+            "mask": "alt_morning_mask.png",
+            "dimensions": [0, 56, 0, 300]
+        },
+        "afternoon": {
+            "url": "https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637",
+            "headers": {"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"},
+            "mask": "afternoon_mask.png",
+            "dimensions": [0, 489, 0, 1920]
+        }
+    }
+
+    if alt_morning:
+        r = requests.get(f'https://api.deckchair.com/v1/camera/599d6375096641f2272bacf4/images?to={unixtime}')
+        r.raise_for_status()
+        identifier = r.json()['data'][0]['_id']
+        webcams['alt_morning']['url'] = f'https://api.deckchair.com/v1/viewer/image/{identifier}?width=300&height=169&resizeMode=fill&gravity=Auto&quality=90&panelMode=false&format=jpg'
+
     kwargs = {"debug": debug, "quiet": quiet}
 
-    afternoon_image = get_image(webcam='afternoon', cache=cache, **kwargs)
-    morning_image = get_image(webcam='morning', cache=cache, **kwargs)
-    modified_afternoon_image = apply_all_afternoon_image_modifications(afternoon_image, **kwargs)
-    modified_morning_image = apply_all_morning_image_modifications(morning_image, **kwargs)
+    afternoon_image = get_image(webcam=webcams['afternoon'], cache=cache, **kwargs)
+    modified_afternoon_image = apply_all_image_modifications(image=afternoon_image, settings=webcams['afternoon'], **kwargs)
+    if alt_morning:
+        morning_image = get_image(webcam=webcams['alt_morning'], cache=cache, **kwargs)
+        modified_morning_image   = apply_all_image_modifications(image=morning_image, settings=webcams['alt_morning'], **kwargs)
+    else:
+        morning_image = get_image(webcam=webcams['morning'], cache=cache, **kwargs)
+        modified_morning_image   = apply_all_image_modifications(image=morning_image, settings=webcams['morning'], **kwargs)
     final_image = merge_images(morning=modified_morning_image, afternoon=modified_afternoon_image, **kwargs)
 
     elapsed = time.time() - start_time
@@ -313,6 +338,7 @@ def apply_mask(image, mask_filename, debug=False, quiet=False):
         print_scimage(mask)
     rgba_mask = cv2.cvtColor(mask, cv2.COLOR_RGB2RGBA)
     rgba      = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)
+    logging.info(f'Image shape: {rgba.shape}, mask shape: {rgba_mask.shape}')
     result = cv2.subtract(rgba, rgba_mask)
     if not quiet:
         logging.info('Displaying masked image:')

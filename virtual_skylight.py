@@ -251,6 +251,7 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
         logging.basicConfig(level=logging.INFO)
 
     bulbs = []
+    start_time = time.time()
 
     try:
         bulbs = load_config()['bulbs']
@@ -259,8 +260,6 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
         bulbs = yeelight.discover_bulbs()
         bulbs.sort(key=lambda x: x['capabilities']['id'])
     assert len(bulbs) > 0
-
-    sleep_time = 50.0 / len(bulbs)  # small buffer between 1 minute invocations
 
     if off:
         for bulb in bulbs:
@@ -277,8 +276,18 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
     modified_morning_image = apply_all_morning_image_modifications(morning_image, **kwargs)
     final_image = merge_images(morning=modified_morning_image, afternoon=modified_afternoon_image, **kwargs)
 
+    elapsed = time.time() - start_time
+    logging.info(f'Elapsed time: {elapsed}')
+    sleep_time = (58 - elapsed) / len(bulbs)
+    logging.info(f'Sleep time: {sleep_time}')
+    sleeped = False
+
     bulbs_and_hsvs = get_hsv_by_bulb(final_image, bulbs, **kwargs)
     for h, s, v, bulb in bulbs_and_hsvs:
+        if sleeped:  # skip the first sleep as we've probably already wasted time downloading images
+            time.sleep(sleep_time)
+        sleeped = True
+
         logging.info('Updating {}...'.format(bulb['ip']))
         if not dry_run:
             if v < 15:
@@ -294,7 +303,6 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run):
                 except yeelight.main.BulbException:
                     logging.critical("Failed to update {}...".format(bulb['ip']))
         logging.info('Updated {}.'.format(bulb['ip']))
-        time.sleep(sleep_time)
     logging.info('Done.')
 
 

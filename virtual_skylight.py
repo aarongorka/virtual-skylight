@@ -11,8 +11,8 @@ import pickle as pickle
 import click
 from pathlib import Path
 import backoff
-from fabulous import image as fab_image
-from fabulous import text
+from fabulous.image import Image as FabImage
+from fabulous.text import Text as FabText
 from fabulous.color import fg256
 import imageio
 import yaml
@@ -30,9 +30,9 @@ exceptions = (requests.exceptions.HTTPError, requests.exceptions.ConnectionError
 @backoff.on_exception(backoff.expo, exceptions)
 def get_image(webcam, cache=False, debug=False, quiet=False):
 
-    if cache and Path(f'{webcam}_content.pkl').is_file():
+    if cache and Path(webcam['cache']).is_file():
         logging.debug('Using cache...')
-        content = pickle.load(open(f'{webcam}_content.pkl', 'rb'))
+        content = pickle.load(open(webcam['cache'], 'rb'))
     else:
         logging.debug('Not using cache...')
         r = requests.get(webcam['url'], headers=webcam['headers'])
@@ -40,7 +40,7 @@ def get_image(webcam, cache=False, debug=False, quiet=False):
         content = r.content
         if cache:
             logging.debug('Saving cache...')
-            save_object(content, f'{webcam}_content.pkl')
+            save_object(content, webcam['cache'])
 
     image_file = io.BytesIO(content)
     imread = skimage.io.imread(image_file)
@@ -72,7 +72,7 @@ def crop_image(image, dimensions, debug=False, quiet=False):
 def print_scimage(image):
     image_file = io.BytesIO()
     imageio.imwrite(image_file, image, format='png')
-    print(fab_image.Image(image_file))
+    print(FabImage(image_file))
 
 
 def enhance_image(image, debug=False, quiet=False):
@@ -234,8 +234,8 @@ def merge_images(morning, afternoon, debug=False, quiet=False):
 @click.option('--dry-run', is_flag=True)
 @click.option('--alt-morning', is_flag=True)
 def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
-#    if not quiet:
-#        print(text.Text("Virtual Skylight", shadow=True, skew=5))
+    if not quiet:
+        print(FabText("Virtual Skylight", shadow=True, skew=5))
 
     if debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -267,19 +267,22 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
             "url": "http://weather.trevandsteve.com/snapshot1.jpg?x={unixtime}",
             "headers": {"Referer": "http://weather.trevandsteve.com/"},
             "mask": "morning_mask.png",
-            "dimensions": [0, 313, 0, 639]
+            "dimensions": [0, 313, 0, 639],
+            "cache": "morning_content.pkl"
         },
         "alt_morning": {
             "url": "",
             "headers": {},
             "mask": "alt_morning_mask.png",
-            "dimensions": [0, 56, 0, 300]
+            "dimensions": [0, 56, 0, 300],
+            "cache": "alt_morning_content.pkl"
         },
         "afternoon": {
             "url": "https://captiveye-kirribilli.qnetau.com/refresh/getshot.asp?refresh=1557436280637",
             "headers": {"Referer": "https://captiveye-kirribilli.qnetau.com/refresh/default_embed.asp"},
             "mask": "afternoon_mask.png",
-            "dimensions": [0, 489, 0, 1920]
+            "dimensions": [0, 489, 0, 1920],
+            "cache": "afternoon_content.pkl"
         }
     }
 

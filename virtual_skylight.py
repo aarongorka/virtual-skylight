@@ -11,9 +11,6 @@ import pickle as pickle
 import click
 from pathlib import Path
 import backoff
-from fabulous.image import Image as FabImage
-from fabulous.text import Text as FabText
-from fabulous.color import fg256
 import imageio
 import yaml
 import time
@@ -83,7 +80,7 @@ def enhance_image(image, debug=False, quiet=False):
     """
 
     better_exposure = exposure.rescale_intensity(image, in_range=(0, 150))  # apply some contrast
-    better_gamma = exposure.adjust_gamma(better_exposure, 2)
+    better_gamma = exposure.adjust_gamma(better_exposure, 3)
     final_adjustment = better_gamma
 
     if debug:
@@ -96,6 +93,15 @@ def enhance_image(image, debug=False, quiet=False):
         skimage.io.imshow(final_adjustment)
         skimage.io.show()
     return final_adjustment
+
+
+def fg256(*args, **kwargs):
+    """Workaround for fabulous imports breaking logging. Returns the uncoloured text if fg256 isn't imported."""
+
+    try:
+        return fab_fg256(*args, **kwargs)
+    except NameError:
+        return args[1]
 
 
 def get_dominant_colour(image, debug=False, quiet=False):
@@ -157,7 +163,6 @@ def rgb_to_hsv(r, g, b):
 
 def get_hsv_by_bulb(image, bulbs, debug=False, quiet=False):
     number_of_chunks = len(bulbs)
-#    import pdb; pdb.set_trace()
     height = image.shape[0]
     width = image.shape[1]
     #height = image.size[1]
@@ -213,7 +218,7 @@ def merge_images(morning, afternoon, debug=False, quiet=False):
 
     min_shape = sorted([(np.sum(i.size), i.size) for i in imgs])[0][1]
     logging.info(f'Min shape is {min_shape}')
-    
+
     imgs_comb = np.vstack((np.asarray(i.resize(min_shape)) for i in imgs))
 #    imgs_comb = PIL.Image.fromarray(imgs_comb)
 
@@ -235,6 +240,10 @@ def merge_images(morning, afternoon, debug=False, quiet=False):
 @click.option('--alt-morning', is_flag=True)
 def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
     if not quiet:
+        # https://github.com/jart/fabulous/issues/17
+        from fabulous.image import Image as FabImage
+        from fabulous.text import Text as FabText
+        from fabulous.color import fg256 as fab_fg256
         print(FabText("Virtual Skylight", shadow=True, skew=5))
 
     if debug:
@@ -327,11 +336,25 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
             else:
                 this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
                 try:
-                    this_bulb.set_hsv(h, s * 2, v, duration=int(15000))  # double saturation
+                    blended_h, blended_s, blended_v = blend_hsv(h, s, v, this_bulb)
+                    this_bulb.set_hsv(blended_h, blended_s, blended_v, duration=15000)
                 except yeelight.main.BulbException:
                     logging.critical("Failed to update {}...".format(bulb['ip']))
         logging.info('Updated {}.'.format(bulb['ip']))
     logging.info('Done.')
+
+
+def blend_hsv(h: int, s: int, v: int, this_bulb: yeelight.Bulb):
+    old_hsv = this_bulb.get_properties(requested_properties=['hue', 'sat', 'bright'])
+    logging.info(f'Old hsv: {old_hsv}')
+    if abs(int(old_hsv['hue']) - int(h)) > 128:
+        blended_h: int = int((int(h) + int(old_hsv['hue'])) / 2)
+    else:
+        blended_h = h  # new/old value has probably rolled over to 0, don't bother calculating average
+    blended_s: int = int((int(s) + int(old_hsv['sat']))    / 2)
+    blended_v: int = int((int(v) + int(old_hsv['bright'])) / 2)
+    logging.info(f'Blended hsv: {blended_h} {blended_s}, {blended_v}')
+    return int(blended_h), int(blended_s), int(blended_v)
 
 
 def apply_mask(image, mask_filename, debug=False, quiet=False):

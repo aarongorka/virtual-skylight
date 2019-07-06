@@ -4,3 +4,4 @@ venv/
 config.yml
 __pycache__/
 *.cast
+.mypy_cache/

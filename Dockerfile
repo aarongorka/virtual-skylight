@@ -1,4 +1,5 @@
-FROM python:3.7-slim  # opencv build process does not support musl :(
+# opencv build process does not support musl :(
+FROM python:3.7-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 RUN apt-get update && \

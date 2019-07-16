@@ -80,7 +80,7 @@ def enhance_image(image, debug=False, quiet=False):
     """
 
     better_exposure = exposure.rescale_intensity(image, in_range=(0, 150))  # apply some contrast
-    better_gamma = exposure.adjust_gamma(better_exposure, 3)
+    better_gamma = exposure.adjust_gamma(better_exposure, 2)
     final_adjustment = better_gamma
 
     if debug:
@@ -180,7 +180,7 @@ def get_hsv_by_bulb(image, bulbs, debug=False, quiet=False):
             skimage.io.show()
         r, g, b = get_dominant_colour(image_chunk)
         h, s, v = rgb_to_hsv(r, g * 0.8, b)  # slightly decrease greenness
-        yield h, s, v, bulb
+        yield int(h), int(s), int(v), bulb
 
 
 def apply_all_image_modifications(image, settings, debug=False, quiet=False):
@@ -311,7 +311,8 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
     else:
         morning_image = get_image(webcam=webcams['morning'], cache=cache, **kwargs)
         modified_morning_image   = apply_all_image_modifications(image=morning_image, settings=webcams['morning'], **kwargs)
-    final_image = merge_images(morning=modified_morning_image, afternoon=modified_afternoon_image, **kwargs)
+    #final_image = merge_images(morning=modified_morning_image, afternoon=modified_afternoon_image, **kwargs)
+    final_image = modified_afternoon_image
 
     elapsed = time.time() - start_time
     logging.info(f'Elapsed time: {elapsed}')
@@ -322,6 +323,7 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
     bulbs_and_hsvs = get_hsv_by_bulb(final_image, bulbs, **kwargs)
     for h, s, v, bulb in bulbs_and_hsvs:
         if sleeped:  # skip the first sleep as we've probably already wasted time downloading images
+            logging.info("Sleeping for {sleep_time}...")
             time.sleep(sleep_time)
         sleeped = True
 
@@ -336,8 +338,8 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
             else:
                 this_bulb = yeelight.Bulb(bulb['ip'], auto_on=True)
                 try:
-                    blended_h, blended_s, blended_v = blend_hsv(h, s, v, this_bulb)
-                    this_bulb.set_hsv(blended_h, blended_s, blended_v, duration=15000)
+                    #blended_h, blended_s, blended_v = blend_hsv(h, s, v, this_bulb)
+                    this_bulb.set_hsv(h, s, v, duration=15000)
                 except yeelight.main.BulbException:
                     logging.critical("Failed to update {}...".format(bulb['ip']))
         logging.info('Updated {}.'.format(bulb['ip']))
@@ -345,15 +347,21 @@ def set_all_bulbs_to_sky(debug, quiet, cache, off, dry_run, alt_morning):
 
 
 def blend_hsv(h: int, s: int, v: int, this_bulb: yeelight.Bulb):
-    old_hsv = this_bulb.get_properties(requested_properties=['hue', 'sat', 'bright'])
-    logging.info(f'Old hsv: {old_hsv}')
-    if abs(int(old_hsv['hue']) - int(h)) > 128:
-        blended_h: int = int((int(h) + int(old_hsv['hue'])) / 2)
+    """Doesn't work, get_properties always returns the same hsv"""
+
+    old_hsv = this_bulb.get_properties(requested_properties=['hue', 'sat', 'bright', 'rgb'])
+    old_h: int = int(old_hsv['hue'])
+    old_s: int = int(old_hsv['sat'])
+    old_v: int = int(old_hsv['bright'])
+    logging.info(f'Old hsv: {old_h}, {old_s}, {old_v}')
+
+    if old_h > 128:
+        blended_h: int = int((h + old_h) / 2)
     else:
         blended_h = h  # new/old value has probably rolled over to 0, don't bother calculating average
-    blended_s: int = int((int(s) + int(old_hsv['sat']))    / 2)
-    blended_v: int = int((int(v) + int(old_hsv['bright'])) / 2)
-    logging.info(f'Blended hsv: {blended_h} {blended_s}, {blended_v}')
+    blended_s: int = int((s + old_s) / 2)
+    blended_v: int = int((v + old_v) / 2)
+    logging.info(f'Blended hsv: {blended_h}, {blended_s}, {blended_v}')
     return int(blended_h), int(blended_s), int(blended_v)
 
 
